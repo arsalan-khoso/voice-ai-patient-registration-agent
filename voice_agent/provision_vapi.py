@@ -12,7 +12,7 @@ Environment:
     VAPI_WEBHOOK_SECRET    Same secret the backend was deployed with
     VAPI_ASSISTANT_ID      (optional) set to update an existing assistant instead of creating one
     LLM_PROVIDER / LLM_MODEL          default: openai / gpt-4.1
-    VOICE_PROVIDER / VOICE_ID         default: vapi / Elliot (built-in, no extra vendor fee)
+    VOICE_PROVIDER / VOICE_ID         default: 11labs / sarah (set VOICE_PROVIDER=vapi VOICE_ID=Elliot for the cheaper built-in voice)
     TRANSCRIBER_MODEL / TRANSCRIBER_LANGUAGE   default: nova-3 / multi (auto-detects English/Spanish)
 """
 import argparse
@@ -29,8 +29,8 @@ from app.voice.tool_definitions import TOOLS
 VAPI_API = "https://api.vapi.ai"
 PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
 FIRST_MESSAGE = (
-    "Thanks for calling Riverside Family Health, this is Sam. I can get you registered as a new patient "
-    "in just a few minutes. Can I start with your first and last name?"
+    "Hi, thanks for calling Riverside Family Health, this is Sam. I can get you registered as a new patient "
+    "- it only takes a few minutes. Could I get your first and last name?"
 )
 
 
@@ -44,6 +44,21 @@ def env(name: str, default: str | None = None) -> str:
 def load_prompt() -> str:
     """The prompt file carries HTML design comments for reviewers; strip them so the LLM (and your token bill) never sees them."""
     return re.sub(r"<!--.*?-->\s*", "", PROMPT_PATH.read_text(encoding="utf-8"), flags=re.S).strip()
+
+
+def build_voice() -> dict:
+    provider = env("VOICE_PROVIDER", "11labs")
+    voice = {"provider": provider, "voiceId": env("VOICE_ID", "sarah")}
+    if provider == "11labs":
+        voice.update({
+            "model": "eleven_turbo_v2_5",  # natural, low latency, multilingual (Spanish support)
+            "stability": 0.45,             # lower = more expressive / less monotone
+            "similarityBoost": 0.8,
+            "style": 0.15,                 # a touch of warmth without sounding theatrical
+            "speed": 1.0,
+            "useSpeakerBoost": True,
+        })
+    return voice
 
 
 def build_assistant_payload() -> dict:
@@ -67,7 +82,7 @@ def build_assistant_payload() -> dict:
                 {"type": "endCall"},
             ],
         },
-        "voice": {"provider": env("VOICE_PROVIDER", "vapi"), "voiceId": env("VOICE_ID", "Elliot")},  # built-in voice: no extra per-minute vendor fee
+        "voice": build_voice(),
         "transcriber": {
             "provider": "deepgram",
             "model": env("TRANSCRIBER_MODEL", "nova-3"),
@@ -77,6 +92,7 @@ def build_assistant_payload() -> dict:
         "server": server,
         "serverMessages": ["end-of-call-report"],
         # Resilience / telephony behaviour
+        "backgroundSound": "office",  # faint front-desk ambience: silence on a phone line feels robotic
         "maxDurationSeconds": 900,  # hard cap so a stuck call can't run forever
         # Don't cut people off mid phone-number; handle interruptions quickly.
         "startSpeakingPlan": {"waitSeconds": 0.6, "smartEndpointingPlan": {"provider": "vapi"}},

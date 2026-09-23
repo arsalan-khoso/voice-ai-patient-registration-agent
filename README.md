@@ -69,7 +69,7 @@ write data the API would reject.
 | Choice | Why |
 |---|---|
 | **Vapi** (telephony + STT + TTS + orchestration) | The PDF explicitly recommends it; gives a real number in minutes so the 3 hours go into prompt quality, validation and resilience instead of audio plumbing. Provisioned from code (`voice_agent/provision_vapi.py`) so it's reproducible. |
-| **GPT-4o** (configurable via `LLM_PROVIDER` / `LLM_MODEL`; Anthropic/Gemini also work in Vapi) | Fast, reliable tool calling, handles corrections and multilingual speech. Temperature 0.4. |
+| **GPT-4.1** (configurable via `LLM_PROVIDER` / `LLM_MODEL`; Anthropic/Gemini also work in Vapi) | Fast, reliable tool calling, handles corrections and multilingual speech. Temperature 0.4. |
 | **FastAPI + Pydantic v2** | Typed validation gives the 400/422 split cheaply, auto OpenAPI docs, async webhook + sync service layer. |
 | **PostgreSQL** (prod) / SQLite (local, tests) via **SQLAlchemy 2.0** | Relational fits the fixed schema; CHECK constraints, UUID/date/timestamptz types; data survives restarts (managed volume). SQLite keeps `pytest` and first-run setup trivial. |
 | **Alembic** | Schema changes are versioned; the container runs `alembic upgrade head` on boot. |
@@ -136,6 +136,7 @@ The full system prompt is `voice_agent/system_prompt.md` (commented by section).
 - **Mandatory read-back gate** enforced twice: by the prompt *and* by `confirmed=true` on `save_patient`.
 - **Explicit rules** for corrections ("D-A-V-I-S not D-A-V-I-E-S"), out-of-order answers, interruptions, restart, silence, failure to understand.
 - **Failure scripts** for every tool outcome (`errors[]`, `duplicate`, `system_error`, `verification_failed`).
+- **Human touch**: a dedicated prompt section (contractions, brief reactions before each question, paced to the caller, sparing fillers, honest "I'm an AI" answer) + ElevenLabs `eleven_turbo_v2_5` (`sarah`, stability 0.45 for expressiveness) + faint office ambience so the line never goes dead-silent.
 - Temperature 0.4; `startSpeakingPlan` waits 0.6 s + smart endpointing so callers aren't cut off mid-phone-number.
 
 Tool schemas: `app/voice/tool_definitions.py`. Assistant config: `voice_agent/provision_vapi.py`.
@@ -172,6 +173,8 @@ railway domain                            # prints https://<name>.up.railway.app
 `railway.toml` configures the Dockerfile build, the `/health` check and restart policy; Railway injects `$PORT`.
 The container runs one worker by default (`WEB_CONCURRENCY`) to stay within the trial/hobby resource budget.
 `render.yaml` is kept as an alternative blueprint (Render's free web tier sleeps when idle, so it is a poor fit for a phone agent).
+
+**Voice cost:** ElevenLabs adds roughly $0.015-0.024/min on Vapi; set `VOICE_PROVIDER=vapi VOICE_ID=Elliot` to use the cheaper built-in voice.
 
 **Cost note:** Railway has no permanent free tier: the trial gives a one-off credit; this app (one small container + Postgres) uses only cents per day. Vapi bills per call-minute from your prepaid credits; the free U.S. number itself is free.
 

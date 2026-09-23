@@ -12,8 +12,8 @@ Environment:
     VAPI_WEBHOOK_SECRET    Same secret the backend was deployed with
     VAPI_ASSISTANT_ID      (optional) set to update an existing assistant instead of creating one
     LLM_PROVIDER / LLM_MODEL          default: openai / gpt-4.1
-    VOICE_PROVIDER / VOICE_ID         default: 11labs / sarah (set VOICE_PROVIDER=vapi VOICE_ID=Elliot for the cheaper built-in voice)
-    TRANSCRIBER_MODEL / TRANSCRIBER_LANGUAGE   default: nova-3 / multi (auto-detects English/Spanish)
+    VOICE_PROVIDER / VOICE_ID         default: openai / marin (gpt-4o-mini-tts, steerable). Also: 11labs, cartesia, rime-ai, vapi (see build_voice)
+    TRANSCRIBER_PROVIDER   default: soniox (stt-rt-v5, English+Spanish hints); "deepgram" also supported
 """
 import argparse
 import json
@@ -46,18 +46,51 @@ def load_prompt() -> str:
     return re.sub(r"<!--.*?-->\s*", "", PROMPT_PATH.read_text(encoding="utf-8"), flags=re.S).strip()
 
 
+# Domain terms the recogniser should favour (insurers are the hardest words on a registration call).
+VOCABULARY = [
+    "Blue Cross Blue Shield", "Aetna", "Cigna", "UnitedHealthcare", "Humana", "Kaiser Permanente", "Anthem",
+    "Medicare", "Medicaid", "Tricare", "Riverside Family Health", "Arsalan", "Ahmed", "Muhammad", "Hussain",
+]
+
+
+def build_transcriber() -> dict:
+    """Soniox handles accented English + names far better than the Deepgram multi-language mode we started with
+    (first real call: Deepgram returned only "My name is." and dropped the name). Deepgram remains selectable."""
+    if env("TRANSCRIBER_PROVIDER", "soniox") == "deepgram":
+        return {"provider": "deepgram", "model": env("TRANSCRIBER_MODEL", "nova-3"), "language": env("TRANSCRIBER_LANGUAGE", "en")}
+    return {
+        "provider": "soniox",
+        "model": "stt-rt-v5",
+        "languages": ["en", "es"],       # bias to English, still understand Spanish ("Hablo espanol")
+        "languageHintsStrict": False,
+        "endpointSensitivity": -0.5,      # callers pause mid-sentence and while reading digits/spelling
+        "maxEndpointDelayMs": 1200,
+        "customVocabulary": VOCABULARY,
+    }
+
+
+# Delivery direction for OpenAI's steerable TTS: this is what makes it sound like a person on a phone, not a reader.
+VOICE_STYLE = (
+    "You are a warm, relaxed front-desk coordinator on a phone call. Speak conversationally, like a real person, "
+    "not like a presenter: natural rhythm, slight pauses between thoughts, and a smile in your voice. Use gentle "
+    "rising intonation on questions. Sound friendly and unhurried; sound genuinely interested, and a little "
+    "reassuring when the caller hesitates. Read phone numbers and ZIP codes in small, clear groups with brief pauses. "
+    "Never sound scripted or robotic, and never sound like an announcer."
+)
+
+
 def build_voice() -> dict:
-    provider = env("VOICE_PROVIDER", "11labs")
-    voice = {"provider": provider, "voiceId": env("VOICE_ID", "sarah")}
-    if provider == "11labs":
-        voice.update({
-            "model": "eleven_turbo_v2_5",  # natural, low latency, multilingual (Spanish support)
-            "stability": 0.45,             # lower = more expressive / less monotone
-            "similarityBoost": 0.8,
-            "style": 0.15,                 # a touch of warmth without sounding theatrical
-            "speed": 1.0,
-            "useSpeakerBoost": True,
-        })
+    """Default: OpenAI gpt-4o-mini-tts 'marin' - steerable, very natural. Alternatives via env, e.g.
+    VOICE_PROVIDER=11labs VOICE_ID=sarah | cartesia (+VOICE_MODEL=sonic-3) | rime-ai (+VOICE_MODEL=arcana) | vapi VOICE_ID=Elliot."""
+    provider = env("VOICE_PROVIDER", "openai")
+    voice = {"provider": provider, "voiceId": env("VOICE_ID", "marin")}
+    if provider == "openai":
+        voice.update({"model": "gpt-4o-mini-tts", "instructions": VOICE_STYLE, "speed": 1.0})
+    elif provider == "11labs":
+        voice.update({"model": "eleven_turbo_v2_5", "stability": 0.45, "similarityBoost": 0.8, "style": 0.15,
+                      "speed": 1.0, "useSpeakerBoost": True})
+    elif os.environ.get("VOICE_MODEL"):
+        voice["model"] = os.environ["VOICE_MODEL"]
     return voice
 
 
@@ -83,11 +116,7 @@ def build_assistant_payload() -> dict:
             ],
         },
         "voice": build_voice(),
-        "transcriber": {
-            "provider": "deepgram",
-            "model": env("TRANSCRIBER_MODEL", "nova-3"),
-            "language": env("TRANSCRIBER_LANGUAGE", "multi"),
-        },
+        "transcriber": build_transcriber(),
         # Where end-of-call reports (transcript, summary, drop reason) are delivered.
         "server": server,
         "serverMessages": ["end-of-call-report"],
@@ -95,7 +124,18 @@ def build_assistant_payload() -> dict:
         "backgroundSound": "office",  # faint front-desk ambience: silence on a phone line feels robotic
         "maxDurationSeconds": 900,  # hard cap so a stuck call can't run forever
         # Don't cut people off mid phone-number; handle interruptions quickly.
-        "startSpeakingPlan": {"waitSeconds": 0.6, "smartEndpointingPlan": {"provider": "vapi"}},
+        "startSpeakingPlan": {
+            "waitSeconds": 0.6,
+            "smartEndpointingPlan": {"provider": "vapi"},
+            # A caller who says "my name is..." and pauses must NOT be cut off (this happened on the first real
+            # test call): when their words end on a lead-in / filler, wait longer before the agent replies.
+            "customEndpointingRules": [{
+                "type": "customer",
+                "regex": r"(my (first |last |full )?name is|name is|this is|it'?s|it is|i am|i'm|that'?s|and|um+|uh+|so)[\s.,]*$",
+                "regexOptions": [{"type": "ignore-case", "enabled": True}],
+                "timeoutSeconds": 2.2,
+            }],
+        },
         "stopSpeakingPlan": {"numWords": 2, "voiceSeconds": 0.2},
         # Dead line / caller went silent: nudge once, then hang up cleanly.
         "hooks": [

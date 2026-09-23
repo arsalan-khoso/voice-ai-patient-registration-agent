@@ -1,0 +1,11 @@
+# Railway deploy config: builds the Dockerfile, runs migrations on boot (docker-entrypoint.sh),
+# health-checks /health. Railway injects $PORT; DATABASE_URL comes from the Postgres plugin.
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 60
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 5

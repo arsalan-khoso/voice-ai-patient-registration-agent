@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Patient Registrations</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --ink:#1c2430; --muted:#6b7686; --line:#e3e7ee; --accent:#2563eb; --bad:#b42318; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#12161c; --card:#1a2028; --ink:#e6eaf0; --muted:#94a0b0; --line:#2a323d; --accent:#6ea0ff; --bad:#ff8a80; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; }
+  main { max-width:1100px; margin:0 auto; padding:24px 16px; }
+  h1 { font-size:20px; margin:0 0 4px; }
+  .sub { color:var(--muted); margin-bottom:16px; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  input, button { font:inherit; padding:8px 10px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--ink); }
+  button { cursor:pointer; } button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; overflow:auto; }
+  table { width:100%; border-collapse:collapse; min-width:720px; }
+  th, td { text-align:left; padding:10px 12px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  tbody tr { cursor:pointer; } tbody tr:hover { background:color-mix(in srgb, var(--accent) 8%, transparent); }
+  #status { color:var(--muted); margin:10px 2px; } #status.err { color:var(--bad); }
+  dialog { border:1px solid var(--line); border-radius:12px; background:var(--card); color:var(--ink); max-width:640px; width:calc(100% - 32px); }
+  dialog::backdrop { background:rgba(0,0,0,.4); }
+  dl { display:grid; grid-template-columns:170px 1fr; gap:6px 12px; margin:0 0 12px; } dt { color:var(--muted); } dd { margin:0; word-break:break-word; }
+  pre { white-space:pre-wrap; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; max-height:240px; overflow:auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Registered patients</h1>
+  <div class="sub">Live view of the database the voice agent writes to. Test data only.</div>
+  <div class="bar">
+    <input id="q" placeholder="Filter by last name" aria-label="Filter by last name">
+    <input id="key" type="password" placeholder="API key (if required)" aria-label="API key">
+    <button class="primary" id="go">Refresh</button>
+  </div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Name</th><th>DOB</th><th>Phone</th><th>City / State</th><th>Insurance</th><th>Registered (UTC)</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <div id="status" role="status"></div>
+</main>
+<dialog id="detail"><div id="detailBody"></div><form method="dialog"><button>Close</button></form></dialog>
+<script>
+const $ = (id) => document.getElementById(id);
+const statusEl = $("status");
+let patients = [];
+try { $("key").value = sessionStorage.getItem("apiKey") || ""; } catch (_) {}
+
+function headers() { const k = $("key").value.trim(); return k ? { "X-API-Key": k } : {}; }
+function cell(tr, text) { const td = document.createElement("td"); td.textContent = text ?? ""; tr.appendChild(td); }
+
+async function api(path) {
+  const res = await fetch(path, { headers: headers() });
+  const body = await res.json();
+  if (!res.ok) throw new Error(body?.error?.message || res.statusText);
+  return body.data;
+}
+
+async function load() {
+  statusEl.className = ""; statusEl.textContent = "Loading...";
+  try { sessionStorage.setItem("apiKey", $("key").value.trim()); } catch (_) {}
+  const q = $("q").value.trim();
+  try {
+    patients = await api("/patients" + (q ? "?last_name=" + encodeURIComponent(q) : ""));
+    const tbody = $("rows"); tbody.replaceChildren();
+    patients.forEach((p, i) => {
+      const tr = document.createElement("tr");
+      cell(tr, p.first_name + " " + p.last_name); cell(tr, p.date_of_birth); cell(tr, p.phone_number);
+      cell(tr, p.city + ", " + p.state); cell(tr, p.insurance_provider || "-"); cell(tr, p.created_at.replace("T", " ").slice(0, 16));
+      tr.addEventListener("click", () => show(i)); tbody.appendChild(tr);
+    });
+    statusEl.textContent = patients.length + " patient(s)";
+  } catch (e) { statusEl.className = "err"; statusEl.textContent = "Could not load patients: " + e.message; }
+}
+
+async function show(i) {
+  const p = patients[i], body = $("detailBody"); body.replaceChildren();
+  const dl = document.createElement("dl");
+  Object.entries(p).forEach(([k, val]) => {
+    const dt = document.createElement("dt"), dd = document.createElement("dd");
+    dt.textContent = k; dd.textContent = val ?? "-"; dl.append(dt, dd);
+  });
+  body.appendChild(dl);
+  const h = document.createElement("h3"); h.textContent = "Call transcripts"; body.appendChild(h);
+  try {
+    const calls = await api("/patients/" + p.patient_id + "/calls");
+    if (!calls.length) { const n = document.createElement("div"); n.textContent = "No call recorded."; body.appendChild(n); }
+    calls.forEach((c) => {
+      const s = document.createElement("div"); s.className = "sub";
+      s.textContent = (c.summary || "") + " (" + (c.ended_reason || "?") + ")"; body.appendChild(s);
+      const pre = document.createElement("pre"); pre.textContent = c.transcript || "(no transcript)"; body.appendChild(pre);
+    });
+  } catch (e) { body.appendChild(document.createTextNode("Could not load calls: " + e.message)); }
+  $("detail").showModal();
+}
+$("go").addEventListener("click", load); $("q").addEventListener("keydown", (e) => e.key === "Enter" && load());
+load();
+</script>
+</body>
+</html>

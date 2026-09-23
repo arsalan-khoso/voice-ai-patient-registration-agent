@@ -1,0 +1,32 @@
+# Production-parity local stack: PostgreSQL + the API container.
+#   docker compose up --build   ->  http://localhost:8000
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: patients
+      POSTGRES_PASSWORD: patients
+      POSTGRES_DB: patients
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U patients"]
+      interval: 5s
+      retries: 10
+
+  api:
+    build: .
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ENVIRONMENT: production
+      DATABASE_URL: postgresql://patients:patients@db:5432/patients
+      VAPI_WEBHOOK_SECRET: ${VAPI_WEBHOOK_SECRET:-local-dev-secret}
+      API_KEY: ${API_KEY:-}
+      SEED_DEMO_DATA: ${SEED_DEMO_DATA:-true}
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

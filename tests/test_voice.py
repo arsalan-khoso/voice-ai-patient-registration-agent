@@ -175,3 +175,14 @@ def test_parallel_tool_calls_in_one_request(client):
 def test_lookup_rejects_invalid_phone_with_speakable_problem(client):
     out = tool_call(client, "lookup_patient_by_phone", {"phone_number": "415"})
     assert out["found"] is False and out["valid"] is False and "10 digits" in out["problem"]
+
+
+def test_spoken_date_formats_accepted(client):
+    """Real call: "March 14, 1998" / "14. March 1988" were rejected by a numeric-only parser."""
+    for spoken in ["March 14, 1988", "14. March 1988", "March 14th 1988", "Mar 14 1988", "0314 1988",
+                   "03141988", "3/14/1988", "03-14-1988", "1988-03-14"]:
+        out = tool_call(client, "validate_field", {"field": "date_of_birth", "value": spoken})
+        assert out == {"valid": True, "normalized": "03/14/1988"}, spoken
+    for bad, word in [("February 30, 1990", "calendar"), ("3/14/88", "four-digit"), ("March 14, 2999", "future")]:
+        out = tool_call(client, "validate_field", {"field": "date_of_birth", "value": bad})
+        assert out["valid"] is False and word in out["problem"], bad

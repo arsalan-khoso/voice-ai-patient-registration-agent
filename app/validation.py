@@ -86,6 +86,46 @@ def validate_text(value, label: str, *, max_len: int, required: bool = False) ->
     return text
 
 
+_MONTHS = {
+    name: i for i, names in enumerate(
+        [("january", "jan"), ("february", "feb"), ("march", "mar"), ("april", "apr"), ("may",), ("june", "jun"),
+         ("july", "jul"), ("august", "aug"), ("september", "sep", "sept"), ("october", "oct"),
+         ("november", "nov"), ("december", "dec")], start=1)
+    for name in names
+}
+
+
+def _date_or_none(year: int, month: int, day: int) -> date | None:
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def _parse_spoken_date(text: str) -> date | None:
+    """Accept the ways a date arrives from speech-to-text or an LLM, U.S. month-first order:
+    03/14/1988, 3-14-1988, 1988-03-14, March 14, 1988, March 14th 1988, 14 March 1988, 0314 1988, 03141988."""
+    t = text.lower().replace(",", " ").replace(".", " ")
+    t = re.sub(r"(\d)(st|nd|rd|th)\b", r"\1", t)
+    iso = re.fullmatch(r"\s*(\d{4})[-/ ](\d{1,2})[-/ ](\d{1,2})\s*", t)
+    if iso:
+        return _date_or_none(int(iso[1]), int(iso[2]), int(iso[3]))
+    words = t.split()
+    month_words = [w for w in words if w in _MONTHS]
+    if month_words:  # "march 14 1988" or "14 march 1988"
+        nums = [w for w in words if w.isdigit()]
+        if len(month_words) == 1 and len(nums) == 2 and len(nums[1]) == 4:
+            return _date_or_none(int(nums[1]), _MONTHS[month_words[0]], int(nums[0]))
+        return None
+    digits = re.findall(r"\d+", t)
+    if len(digits) == 3 and len(digits[2]) == 4:            # 3/14/1988, 03 14 1988
+        return _date_or_none(int(digits[2]), int(digits[0]), int(digits[1]))
+    joined = "".join(digits)
+    if len(joined) == 8:                                     # 03141988, "0314 1988"
+        return _date_or_none(int(joined[4:]), int(joined[:2]), int(joined[2:4]))
+    return None
+
+
 def parse_date_of_birth(value) -> date:
     if isinstance(value, datetime):
         value = value.date()
@@ -95,16 +135,13 @@ def parse_date_of_birth(value) -> date:
         text = _as_text(value, "date of birth")
         if not text:
             raise ValueError("The date of birth is required.")
-        for fmt in ("%m/%d/%Y", "%Y-%m-%d", "%m-%d-%Y"):
-            try:
-                parsed = datetime.strptime(text, fmt).date()
-                break
-            except ValueError:
-                continue
-        else:
+        parsed = _parse_spoken_date(text)
+        if parsed is None:
+            if re.search(r"\b\d{1,2}[/\- ]\d{1,2}[/\- ]\d{2}\b", text):
+                raise ValueError("I need the full four-digit year of birth, for example nineteen eighty-five.")
             raise ValueError(
-                "That isn't a valid date of birth. Please give the month, day and full four-digit year, "
-                "for example 04/12/1985."
+                "That isn't a real calendar date. Please give the month, day and four-digit year, "
+                "for example March fourteenth, nineteen eighty-eight."
             )
     if parsed > datetime.now(timezone.utc).date():
         raise ValueError("That date of birth is in the future. Please give the actual date you were born.")

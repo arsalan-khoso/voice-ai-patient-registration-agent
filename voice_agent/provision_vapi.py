@@ -104,6 +104,15 @@ def build_voice() -> dict:
     return voice
 
 
+def tool_messages(tool_name: str) -> list[dict]:
+    """Without an explicit request-start message Vapi speaks a default filler ("Hold on a sec", "Give me a moment")
+    before EVERY tool call - robotic and slow on a quick field check. Silence them; checks take ~0.3 s.
+    Saving is the one moment a human would narrate, so it gets a natural line."""
+    if tool_name == "save_patient":
+        return [{"type": "request-start", "content": "Perfect, let me get that saved for you."}]
+    return [{"type": "request-start", "content": ""}]
+
+
 def build_assistant_payload() -> dict:
     base_url = env("PUBLIC_BASE_URL").rstrip("/")
     # Vapi's Server object has no "secret" field; auth is a custom header, which our backend checks.
@@ -122,7 +131,8 @@ def build_assistant_payload() -> dict:
             "maxTokens": 120,    # hard cap on turn length: long monologues are what callers talk over
             "messages": [{"role": "system", "content": load_prompt()}],
             "tools": [
-                *[{"type": "function", "function": t, "server": server, "async": False} for t in TOOLS],
+                *[{"type": "function", "function": t, "server": server, "async": False,
+                   "messages": tool_messages(t["name"])} for t in TOOLS],
                 {"type": "endCall"},
             ],
         },

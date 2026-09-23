@@ -159,3 +159,19 @@ def test_webhook_secret_enforced(client, settings_override):
 def test_webhook_rejects_garbage(client):
     assert client.post("/vapi/webhook", content="x", headers={"content-type": "application/json"}).status_code == 400
     assert client.post("/vapi/webhook", json={"nope": 1}).status_code == 400
+
+
+def test_parallel_tool_calls_in_one_request(client):
+    """The agent validates state + ZIP from one answer in a single turn; each result must match its call id."""
+    body = {"message": {"type": "tool-calls", "call": CALL, "toolCallList": [
+        {"id": "a", "name": "validate_field", "arguments": {"field": "state", "value": "Colorado"}},
+        {"id": "b", "name": "validate_field", "arguments": {"field": "zip_code", "value": "8020"}},
+    ]}}
+    results = {r["toolCallId"]: json.loads(r["result"]) for r in client.post("/vapi/webhook", json=body).json()["results"]}
+    assert results["a"] == {"valid": True, "normalized": "CO"}
+    assert results["b"]["valid"] is False and "ZIP" in results["b"]["problem"]
+
+
+def test_lookup_rejects_invalid_phone_with_speakable_problem(client):
+    out = tool_call(client, "lookup_patient_by_phone", {"phone_number": "415"})
+    assert out["found"] is False and out["valid"] is False and "10 digits" in out["problem"]

@@ -26,8 +26,9 @@ TOOLS = [
         "name": "validate_field",
         "description": (
             "Check ONE value the caller just gave you and get it back in normalized form. Call this "
-            "immediately after the caller answers each of: date_of_birth, phone_number, email, state, "
-            "zip_code, emergency_contact_phone. (Not needed for names, sex, city or street.) If valid=false, read the 'problem' to the caller in "
+            "immediately after the caller answers each of: date_of_birth, email, state, zip_code, "
+            "emergency_contact_phone. Validate several fields from one answer with parallel calls. (Not needed for "
+            "names, sex, city, street, or the caller's own phone - lookup_patient_by_phone checks that.) If valid=false, read the 'problem' to the caller in "
             "your own words and ask for that one field again. Do not narrate the tool call."
         ),
         "parameters": {
@@ -43,7 +44,8 @@ TOOLS = [
         "name": "lookup_patient_by_phone",
         "description": (
             "Check whether a patient with this phone number is already registered. Call it right after "
-            "you have validated the caller's phone number, before collecting the address."
+            "the caller gives their phone number - it also validates it (returns valid=false + problem if bad). "
+            "Call it before collecting the address."
         ),
         "parameters": {
             "type": "object",

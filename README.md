@@ -18,7 +18,7 @@ persistent database and hangs up gracefully. A REST API + small dashboard expose
 
 ```
                         ┌────────────────────────── Vapi (managed voice platform) ──────────────────────────┐
-  Caller ──PSTN──▶ Phone number ─▶ STT (Deepgram) ─▶ LLM (GPT-4o + system prompt + tools) ─▶ TTS (ElevenLabs) ─┐
+  Caller ──PSTN──▶ Phone number ─▶ STT (Soniox) ─▶ LLM (GPT-4.1 + system prompt + tools) ─▶ TTS (OpenAI marin) ──┐
      ▲                                                          │  tool calls / end-of-call report              │
      └──────────────────────────── speech ◀─────────────────────┘                                               │
                                                                  │ HTTPS  POST /vapi/webhook  (X-Vapi-Secret)
@@ -123,7 +123,7 @@ write data the API would reject.
 
 ### Bonus features included
 Duplicate detection · call transcript/summary linked to the patient (`GET /patients/:id/calls`) · dashboard (`/dashboard`) ·
-Spanish switching (multilingual transcriber + prompt rule) · 36 automated tests.
+Spanish switching (English+Spanish transcriber + prompt rule) · 39 automated tests.
 *Not done:* appointment scheduling (listed in Next Steps).
 
 ---
@@ -139,7 +139,8 @@ reaction to every tool outcome) → EDGE CASES → good/bad EXAMPLE dialogues. K
 - **Mandatory read-back gate** enforced twice: by the prompt *and* by `confirmed=true` on `save_patient`.
 - **Explicit rules** for corrections ("D-A-V-I-S not D-A-V-I-E-S"), out-of-order answers, interruptions, restart, silence, failure to understand.
 - **Failure scripts** for every tool outcome (`errors[]`, `duplicate`, `system_error`, `verification_failed`).
-- **Human touch**: a dedicated prompt section (contractions, brief reactions before each question, paced to the caller, sparing fillers, honest "I'm an AI" answer) + ElevenLabs `eleven_turbo_v2_5` (`sarah`, stability 0.45 for expressiveness) + faint office ambience so the line never goes dead-silent.
+- **Human touch**: HOW TO SPEAK section (contractions, brief reactions, paced to the caller, a banned list of robotic phrases) + good/bad example dialogues + OpenAI `gpt-4o-mini-tts` voice `marin` with a written delivery direction (warm front-desk persona, natural pauses, rising questions) + faint office ambience.
+- **No robotic fillers**: every tool gets an explicit empty `request-start` message, otherwise Vapi says "Hold on a sec" before each check.
 - Temperature 0.4; `startSpeakingPlan` waits 0.6 s + smart endpointing so callers aren't cut off mid-phone-number.
 
 Tool schemas: `app/voice/tool_definitions.py`. Assistant config: `voice_agent/provision_vapi.py`.
@@ -155,7 +156,7 @@ pip install -r requirements-dev.txt
 cp .env.example .env                                   # edit as needed
 alembic upgrade head
 SEED_DEMO_DATA=true uvicorn app.main:app --reload      # http://localhost:8000/docs
-pytest                                                 # 36 tests
+pytest                                                 # 39 tests
 ```
 
 ### Production-parity local (Postgres in Docker)
@@ -177,7 +178,7 @@ railway domain                            # prints https://<name>.up.railway.app
 The container runs one worker by default (`WEB_CONCURRENCY`) to stay within the trial/hobby resource budget.
 `render.yaml` is kept as an alternative blueprint (Render's free web tier sleeps when idle, so it is a poor fit for a phone agent).
 
-**Voice cost:** ElevenLabs adds roughly $0.015-0.024/min on Vapi; set `VOICE_PROVIDER=vapi VOICE_ID=Elliot` to use the cheaper built-in voice.
+**Voice:** default OpenAI `marin` (steerable, natural). Alternatives without code changes: `VOICE_PROVIDER=11labs VOICE_ID=sarah`, or `VOICE_PROVIDER=vapi VOICE_ID=Elliot` (cheapest).
 
 **Cost note:** Railway has no permanent free tier: the trial gives a one-off credit; this app (one small container + Postgres) uses only cents per day. Vapi bills per call-minute from your prepaid credits; the free U.S. number itself is free.
 
@@ -223,18 +224,33 @@ curl -X DELETE $BASE/patients/<id>      # soft delete
 
 | Verified (automated / executed) | How |
 |---|---|
-| REST API, validation, envelope, status codes, soft delete | 36 pytest tests, on **SQLite and real PostgreSQL 16** (`TEST_DATABASE_URL=postgresql://... pytest`) |
+| REST API, validation, envelope, status codes, soft delete | 39 pytest tests, on **SQLite and real PostgreSQL 16** (`TEST_DATABASE_URL=postgresql://... pytest`) |
 | Full call scenario incl. corrections, duplicate detection, update-with-DOB-check, dropped call, retried save | Scripted webhook calls against a real 2-worker server on PostgreSQL, incl. **restart persistence** and 20 parallel saves |
 | Alembic migration on PostgreSQL (types + CHECK constraints) | Ran `alembic upgrade head`, inspected `pg_constraint` |
 | Docker image | Built; container run in `ENVIRONMENT=production` against PostgreSQL: migrates on boot, `/health` healthy, webhook + secret guard work; refuses to start without `VAPI_WEBHOOK_SECRET` |
 | Vapi assistant payload | `python -m voice_agent.check_payload` validates every tool/hook/assistant field against Vapi's **published OpenAPI schema** (this caught 4 fields Vapi would have rejected) |
 | Vapi webhook message shapes | Checked against Vapi's docs/OpenAPI (`toolCallList`, `{results:[{toolCallId,result}]}`, end-of-call-report fields) |
 
-| **Not verified** (needs your accounts / a live call) | Why it matters |
+| Live system | How |
 |---|---|
-| A real phone call end-to-end | The conversation quality (naturalness, whether the LLM follows every prompt rule, turn-taking) can only be judged by calling. Budget 30-60 min to place test calls and tune `system_prompt.md`. |
-| `provision_vapi.py` against the live Vapi API | Payload is schema-valid, but I had no API key to execute it. Voice/model ids (`11labs/sarah`, `gpt-4o`, `nova-3`) may need swapping for what your Vapi plan allows. |
-| Railway deployment | Deployed and smoke-tested (health, seed data, dashboard, webhook auth, full tool flow with the production secret). |
+| Real phone calls to the live number | Completed end-to-end registration by phone (read-back → confirmed → saved → call ended), record + transcript visible via API/dashboard |
+| Persistence across a restart | Patient saved by phone at 19:56 UTC was still present after a redeploy at 19:58 UTC |
+| Live REST API | Filters, 201/200/400/404/422, partial PUT, soft delete, envelope, markup rejection - checked against the Railway URL |
+| Observability | `patient registered via voice` log line with the full final payload, in Railway logs |
+
+**Not yet verified on a live call:** a mid-call spelling correction, a truly out-of-order answer, and Spanish switching
+(implemented in the prompt; covered only by webhook-level tests).
+
+### Lessons from real test calls (what changed and why)
+| Observed on a real call | Fix |
+|---|---|
+| Caller said "my name is… Arsalan"; STT (Deepgram multi-language) returned only "My name is." | Switched STT to Soniox with domain context + vocabulary; endpointing rule waits longer after lead-ins like "my name is" |
+| Spelling arrived in fragments ("A-A-H." … "A-H-M-E-D."), agent confirmed "A-A-H" | Wait longer when the caller's words end on a lone letter; prompt combines fragments; letters read back as "A, H, M, E, D" (hyphens were spoken as one word) |
+| Agent kept talking when interrupted | Barge-in on voice activity (0.2 s) instead of 2 transcribed words; "wait/no/actually" stop it instantly |
+| "Just a sec" before every check | Vapi's default tool filler - silenced per tool |
+| "March 14, 1988" rejected three times | Date parser only accepted numeric formats; now accepts spoken forms (tested) |
+| ~3 s per reply | Shorter endpointing waits, TTS chunking, address in one question, parallel validation, phone validated inside lookup |
+| Offered a +92 caller ID as the U.S. phone; allowed skipping required fields | Prompt: only offer +1 caller IDs; required fields can't be skipped |
 
 ## 7. Next steps
 1. Appointment scheduling after registration (mock slots table + `book_appointment` tool).

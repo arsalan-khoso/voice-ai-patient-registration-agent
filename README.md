@@ -130,7 +130,10 @@ Spanish switching (multilingual transcriber + prompt rule) · 36 automated tests
 
 ## 4. Prompt engineering (documented)
 
-The full system prompt is `voice_agent/system_prompt.md` (commented by section). Key decisions:
+The full system prompt is `voice_agent/system_prompt.md`; its header comment documents the design. It is structured as
+IDENTITY → HOW TO SPEAK → SPEECH FORMATTING (text is written the way TTS should say it) → LISTENING (rules learned
+from real test calls: fragments, misheard names, spelling in pieces) → CHECKLIST + FLOW → TOOLS CONTRACT (a scripted
+reaction to every tool outcome) → EDGE CASES → good/bad EXAMPLE dialogues. Key decisions:
 - **Voice-first style rules**: 1–2 sentence turns, one question at a time, spoken-form numbers/dates, no markdown, varied acknowledgements.
 - **Tools instead of memory for correctness**: dates, phones, states, ZIPs are validated by code, not by the LLM's judgement; messages are written to be spoken.
 - **Mandatory read-back gate** enforced twice: by the prompt *and* by `confirmed=true` on `save_patient`.

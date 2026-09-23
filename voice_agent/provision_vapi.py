@@ -29,8 +29,8 @@ from app.voice.tool_definitions import TOOLS
 VAPI_API = "https://api.vapi.ai"
 PROMPT_PATH = Path(__file__).with_name("system_prompt.md")
 FIRST_MESSAGE = (
-    "Hi, thanks for calling Riverside Family Health, this is Sam. I can get you registered as a new patient "
-    "- it only takes a few minutes. Could I get your first and last name?"
+    "Hi, thanks for calling Riverside Family Health, this is Sam. I can get you registered as a new patient, "
+    "it only takes a few minutes. Can I start with your first and last name?"
 )
 
 
@@ -76,12 +76,14 @@ def build_transcriber() -> dict:
 
 # Delivery direction for OpenAI's steerable TTS: this is what makes it sound like a person on a phone, not a reader.
 VOICE_STYLE = (
-    "You are a warm, relaxed front-desk coordinator on a phone call. Speak conversationally, like a real person, "
-    "not like a presenter: natural rhythm, slight pauses between thoughts, and a smile in your voice. Use gentle "
-    "rising intonation on questions. Sound friendly and unhurried; sound genuinely interested, and a little "
-    "reassuring when the caller hesitates. Read phone numbers and ZIP codes in small, clear groups with brief pauses. "
-    "When you read out a spelling, say each letter as its own distinct letter name with a tiny pause after it, never as "
-    "a word (a spelled \"A, H, M, E, D\" is five separate letters). Never sound scripted or robotic, and never like an announcer."
+    "Voice: a friendly American woman in her early thirties working the front desk of a small family clinic. "
+    "Delivery: relaxed, warm and conversational, like chatting with a regular patient - never like an announcer, "
+    "narrator or automated system. Let a light smile come through. "
+    "Pacing: natural and unhurried but not slow; tiny pauses at commas, a slightly longer beat between thoughts. "
+    "Intonation: gentle rise on questions, soft and reassuring when the caller hesitates, a little brighter on "
+    "\"perfect\" and \"you're all set\". Vary pitch naturally; avoid a flat, even, read-aloud rhythm. "
+    "Numbers: read phone numbers and ZIP codes in small, clear groups with short pauses. When reading a spelling, "
+    "say each letter as its own distinct letter name with a tiny pause after it."
 )
 
 

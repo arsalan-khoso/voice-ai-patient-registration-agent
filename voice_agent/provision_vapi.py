@@ -63,8 +63,8 @@ def build_transcriber() -> dict:
         "model": "stt-rt-v5",
         "languages": ["en", "es"],       # bias to English, still understand Spanish ("Hablo espanol")
         "languageHintsStrict": False,
-        "endpointSensitivity": -0.5,      # callers pause mid-sentence and while reading digits/spelling
-        "maxEndpointDelayMs": 1200,
+        "endpointSensitivity": -0.7,      # callers pause mid-sentence and while reading digits/spelling
+        "maxEndpointDelayMs": 1800,
         "customVocabulary": VOCABULARY,
     }
 
@@ -75,7 +75,8 @@ VOICE_STYLE = (
     "not like a presenter: natural rhythm, slight pauses between thoughts, and a smile in your voice. Use gentle "
     "rising intonation on questions. Sound friendly and unhurried; sound genuinely interested, and a little "
     "reassuring when the caller hesitates. Read phone numbers and ZIP codes in small, clear groups with brief pauses. "
-    "Never sound scripted or robotic, and never sound like an announcer."
+    "When you read out a spelling, say each letter as its own distinct letter name with a tiny pause after it, never as "
+    "a word (a spelled \"A, H, M, E, D\" is five separate letters). Never sound scripted or robotic, and never like an announcer."
 )
 
 
@@ -134,6 +135,13 @@ def build_assistant_payload() -> dict:
                 "regex": r"(my (first |last |full )?name is|name is|this is|it'?s|it is|i am|i'm|that'?s|and|um+|uh+|so)[\s.,]*$",
                 "regexOptions": [{"type": "ignore-case", "enabled": True}],
                 "timeoutSeconds": 2.2,
+            }, {
+                # Spelling arrives in fragments ("A-A-H." ... "H-M-E-D."): if the caller's words end on a lone letter
+                # they are mid-spelling, so let them finish (2nd real call: the agent grabbed the first fragment).
+                "type": "customer",
+                "regex": r"(^|[\s.,\-])[a-z]([\s.,\-]*)$",
+                "regexOptions": [{"type": "ignore-case", "enabled": True}],
+                "timeoutSeconds": 2.8,
             }],
         },
         "stopSpeakingPlan": {"numWords": 2, "voiceSeconds": 0.2},

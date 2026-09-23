@@ -27,7 +27,7 @@ TOOLS = [
         "description": (
             "Check ONE value the caller just gave you and get it back in normalized form. Call this "
             "immediately after the caller answers each of: date_of_birth, phone_number, email, state, "
-            "zip_code, emergency_contact_phone, sex. If valid=false, read the 'problem' to the caller in "
+            "zip_code, emergency_contact_phone. (Not needed for names, sex, city or street.) If valid=false, read the 'problem' to the caller in "
             "your own words and ask for that one field again. Do not narrate the tool call."
         ),
         "parameters": {

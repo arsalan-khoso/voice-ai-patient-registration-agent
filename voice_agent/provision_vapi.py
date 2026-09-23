@@ -63,8 +63,8 @@ def build_transcriber() -> dict:
         "model": "stt-rt-v5",
         "languages": ["en", "es"],       # bias to English, still understand Spanish ("Hablo espanol")
         "languageHintsStrict": False,
-        "endpointSensitivity": -0.7,      # callers pause mid-sentence and while reading digits/spelling
-        "maxEndpointDelayMs": 1800,
+        "endpointSensitivity": -0.3,      # callers pause mid-sentence and while reading digits/spelling
+        "maxEndpointDelayMs": 1000,
         "customVocabulary": VOCABULARY,
         "contextGeneral": [
             {"key": "domain", "value": "Healthcare patient registration phone call"},
@@ -91,7 +91,9 @@ def build_voice() -> dict:
     provider = env("VOICE_PROVIDER", "openai")
     voice = {"provider": provider, "voiceId": env("VOICE_ID", "marin")}
     if provider == "openai":
-        voice.update({"model": "gpt-4o-mini-tts", "instructions": VOICE_STYLE, "speed": 1.0})
+        voice.update({"model": "gpt-4o-mini-tts", "instructions": VOICE_STYLE, "speed": 1.05,
+                      # start speaking after the first short phrase instead of waiting for 30+ characters
+                      "chunkPlan": {"enabled": True, "minCharacters": 12}})
     elif provider == "11labs":
         voice.update({"model": "eleven_turbo_v2_5", "stability": 0.45, "similarityBoost": 0.8, "style": 0.15,
                       "speed": 1.0, "useSpeakerBoost": True})
@@ -132,7 +134,7 @@ def build_assistant_payload() -> dict:
         "maxDurationSeconds": 900,  # hard cap so a stuck call can't run forever
         # Don't cut people off mid phone-number; handle interruptions quickly.
         "startSpeakingPlan": {
-            "waitSeconds": 0.6,
+            "waitSeconds": 0.3,
             "smartEndpointingPlan": {"provider": "vapi"},
             # A caller who says "my name is..." and pauses must NOT be cut off (this happened on the first real
             # test call): when their words end on a lead-in / filler, wait longer before the agent replies.
@@ -140,14 +142,14 @@ def build_assistant_payload() -> dict:
                 "type": "customer",
                 "regex": r"(my (first |last |full )?name is|name is|this is|it'?s|it is|i am|i'm|that'?s|and|um+|uh+|so)[\s.,]*$",
                 "regexOptions": [{"type": "ignore-case", "enabled": True}],
-                "timeoutSeconds": 2.2,
+                "timeoutSeconds": 1.5,
             }, {
                 # Spelling arrives in fragments ("A-A-H." ... "H-M-E-D."): if the caller's words end on a lone letter
                 # they are mid-spelling, so let them finish (2nd real call: the agent grabbed the first fragment).
                 "type": "customer",
                 "regex": r"(^|[\s.,\-])[a-z]([\s.,\-]*)$",
                 "regexOptions": [{"type": "ignore-case", "enabled": True}],
-                "timeoutSeconds": 2.8,
+                "timeoutSeconds": 1.8,
             }],
         },
         # Barge-in: stop the moment the caller's voice is detected (VAD), not after N transcribed words - the 3rd

@@ -6,11 +6,11 @@ persistent database and hangs up gracefully. A REST API + small dashboard expose
 
 | | |
 |---|---|
-| **Phone number to call** | `<< fill in after provisioning: +1 (___) ___-____ >>` |
-| **API base URL** | `<< https://your-app.up.railway.app >>` |
-| **Dashboard** | `<API base URL>/dashboard` |
-| **OpenAPI docs** | `<API base URL>/docs` |
-| **Test credentials** | `X-API-Key: << value, or "none - API is open" >>` |
+| **Phone number to call** | **+1 (628) 241-4309** |
+| **API base URL** | https://api-production-e7d4.up.railway.app |
+| **Dashboard** | https://api-production-e7d4.up.railway.app/dashboard |
+| **OpenAPI docs** | https://api-production-e7d4.up.railway.app/docs |
+| **Test credentials** | None needed - the REST API is open (set `API_KEY` to protect it). Two fictional seed patients exist: Jane Doe (`555-010-0123`) and Carlos Rivera. Calling from / giving `555-010-0123` triggers the "we already have a record" flow. |
 
 ---
 
@@ -228,7 +228,7 @@ curl -X DELETE $BASE/patients/<id>      # soft delete
 |---|---|
 | A real phone call end-to-end | The conversation quality (naturalness, whether the LLM follows every prompt rule, turn-taking) can only be judged by calling. Budget 30-60 min to place test calls and tune `system_prompt.md`. |
 | `provision_vapi.py` against the live Vapi API | Payload is schema-valid, but I had no API key to execute it. Voice/model ids (`11labs/sarah`, `gpt-4o`, `nova-3`) may need swapping for what your Vapi plan allows. |
-| Railway deployment | Config written, not executed. |
+| Railway deployment | Deployed and smoke-tested (health, seed data, dashboard, webhook auth, full tool flow with the production secret). |
 
 ## 7. Next steps
 1. Appointment scheduling after registration (mock slots table + `book_appointment` tool).

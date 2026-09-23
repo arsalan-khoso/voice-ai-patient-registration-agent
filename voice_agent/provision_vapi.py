@@ -135,7 +135,8 @@ def main() -> None:
                 "provider": "vapi", "numberDesiredAreaCode": args.buy_number,
                 "assistantId": assistant_id, "name": "Patient registration line",
             })
-            res.raise_for_status()
+            if res.status_code >= 400:
+                sys.exit(f"Vapi refused the number request: {res.text}  (try another --buy-number area code)")
             info = res.json()
             print(f"Phone number: {info.get('number') or info.get('id')}  (id {info['id']})")
         elif args.attach_number:

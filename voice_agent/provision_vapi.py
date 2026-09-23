@@ -49,7 +49,7 @@ def load_prompt() -> str:
 # Domain terms the recogniser should favour (insurers are the hardest words on a registration call).
 VOCABULARY = [
     "Blue Cross Blue Shield", "Aetna", "Cigna", "UnitedHealthcare", "Humana", "Kaiser Permanente", "Anthem",
-    "Medicare", "Medicaid", "Tricare", "Riverside Family Health", "Arsalan", "Ahmed", "Muhammad", "Hussain",
+    "Medicare", "Medicaid", "Tricare", "Riverside Family Health", "Arsalan", "Ahmed", "Muhammad", "Hussain", "Khan", "Ali", "Fatima", "Nguyen", "Garcia", "Rodriguez", "Patel",
 ]
 
 
@@ -66,6 +66,11 @@ def build_transcriber() -> dict:
         "endpointSensitivity": -0.7,      # callers pause mid-sentence and while reading digits/spelling
         "maxEndpointDelayMs": 1800,
         "customVocabulary": VOCABULARY,
+        "contextGeneral": [
+            {"key": "domain", "value": "Healthcare patient registration phone call"},
+            {"key": "topic", "value": "Caller gives name, spelling letter by letter, date of birth, phone number, US address, ZIP code, insurance"},
+            {"key": "callers", "value": "US callers with many accents, including South Asian, Hispanic and Arabic names"},
+        ],
     }
 
 
@@ -110,6 +115,7 @@ def build_assistant_payload() -> dict:
             "provider": env("LLM_PROVIDER", "openai"),
             "model": env("LLM_MODEL", "gpt-4.1"),
             "temperature": 0.4,  # low: reliable tool use & data capture, still natural phrasing
+            "maxTokens": 120,    # hard cap on turn length: long monologues are what callers talk over
             "messages": [{"role": "system", "content": load_prompt()}],
             "tools": [
                 *[{"type": "function", "function": t, "server": server, "async": False} for t in TOOLS],
@@ -144,7 +150,15 @@ def build_assistant_payload() -> dict:
                 "timeoutSeconds": 2.8,
             }],
         },
-        "stopSpeakingPlan": {"numWords": 2, "voiceSeconds": 0.2},
+        # Barge-in: stop the moment the caller's voice is detected (VAD), not after N transcribed words - the 3rd
+        # real call showed the agent talking over a caller who was spelling (letters transcribe slowly).
+        "stopSpeakingPlan": {
+            "numWords": 0,
+            "voiceSeconds": 0.2,
+            "backoffSeconds": 0.8,
+            "interruptionPhrases": ["wait", "stop", "hold on", "no", "actually", "sorry", "that's wrong", "not correct"],
+        },
+        "firstMessageInterruptionsEnabled": True,  # callers often start answering during the greeting
         # Dead line / caller went silent: nudge once, then hang up cleanly.
         "hooks": [
             {
